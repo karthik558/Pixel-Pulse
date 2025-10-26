@@ -7,22 +7,13 @@ on:
         description: "Also create a GitHub Release and attach the zip"
         required: false
         default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
       tag:
         description: "Release tag (defaults to v{version} from manifest.json)"
         required: false
-        type: string
       prerelease:
         description: "Mark the GitHub Release as a prerelease"
         required: false
         default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
 
 permissions:
   contents: write
