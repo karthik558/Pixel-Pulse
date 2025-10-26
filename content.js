@@ -62,9 +62,11 @@
         },
       }),
     );
-    console.debug('[Pixel Pulse] Heartbeat executed', {
+    console.log('[Pixel Pulse] Heartbeat executed', {
       ruleId: rule.id,
+      ruleName: rule.name,
       activity: actionKey,
+      at: new Date(payload.timestamp || Date.now()).toLocaleTimeString(),
     });
   };
 })();

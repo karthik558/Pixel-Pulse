@@ -54,6 +54,9 @@ async function initialize() {
     const { [STORAGE_KEYS.THEME]: theme } = await chrome.storage.sync.get([STORAGE_KEYS.THEME]);
     await updateActionIcon(theme === 'light' ? 'light' : 'dark');
   } catch (e) {}
+  try {
+    await chrome.action.setBadgeBackgroundColor({ color: '#0ea5e9' });
+  } catch (e) {}
   await handleHeartbeat();
 }
 
@@ -150,6 +153,7 @@ async function handleHeartbeat() {
 
     try {
       await runActivity(tab.id, rule);
+      console.log('[Pixel Pulse] Pulse sent', { tabId: tab.id, url: tab.url, rule: rule.name });
       lastExecMap[rule.id] = now;
       await chrome.storage.local.set({ [LOCAL_KEYS.LAST_EXECUTIONS]: lastExecMap });
       await writeStatus({
@@ -160,6 +164,7 @@ async function handleHeartbeat() {
         url: tab.url,
         timestamp: now,
       });
+      flashBadge();
     } catch (error) {
       console.error('[Pixel Pulse] Activity execution failed', error);
       await writeStatus({
@@ -181,6 +186,15 @@ async function handleHeartbeat() {
       timestamp: now,
     });
   }
+}
+
+function flashBadge() {
+  try {
+    chrome.action.setBadgeText({ text: '•' });
+    setTimeout(() => {
+      chrome.action.setBadgeText({ text: '' });
+    }, 2500);
+  } catch (e) {}
 }
 
 async function runActivity(tabId, rule) {
