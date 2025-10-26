@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pixel Pulse</title>
+    <link rel="stylesheet" href="popup.css" />
+    <script src="popup.js" defer></script>
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <div class="header-brand">
+          <img src="logo.png" alt="Pixel Pulse logo" class="brand-logo" />
+          <div class="header-copy">
+            <h1>Pixel Pulse</h1>
+          </div>
+        </div>
+        <div class="header-controls">
+          <button
+            type="button"
+            id="themeToggle"
+            class="theme-toggle"
+            aria-label="Toggle theme"
+            aria-pressed="true"
+            title="Toggle theme"
+          >
+            <svg class="icon icon-sun" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="5"></circle>
+              <line x1="12" y1="1" x2="12" y2="3"></line>
+              <line x1="12" y1="21" x2="12" y2="23"></line>
+              <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+              <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+              <line x1="1" y1="12" x2="3" y2="12"></line>
+              <line x1="21" y1="12" x2="23" y2="12"></line>
+              <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+              <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+            </svg>
+            <svg class="icon icon-moon" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M21 12.79A9 9 0 0 1 11.21 3 7 7 0 1 0 21 12.79z"></path>
+            </svg>
+          </button>
+          <label class="switch">
+            <input type="checkbox" id="globalToggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+      </header>
+
+      <p id="statusText" class="status" aria-live="polite">Loading status…</p>
+      <section class="rules-list" id="rulesContainer"></section>
+
+      <section class="add-rule">
+        <h2>Add Rule</h2>
+        <form id="addRuleForm">
+          <label class="form-field">
+            <span>Name</span>
+            <input type="text" id="addRuleName" placeholder="e.g. Payroll Portal" required />
+          </label>
+          <label class="form-field">
+            <span>URL Pattern</span>
+            <input
+              type="text"
+              id="addRulePattern"
+              placeholder="*://app.example.com/*"
+              required
+            />
+          </label>
+          <div class="form-row">
+            <label class="form-field">
+              <span>Interval (min)</span>
+              <input type="number" id="addRuleInterval" min="1" value="3" />
+            </label>
+            <label class="form-field">
+              <span>Activity</span>
+              <select id="addRuleActivity">
+                <option value="mousemove">Mouse Pulse</option>
+                <option value="scroll">Scroll Nudge</option>
+                <option value="ping">Network Ping</option>
+                <option value="refresh">Page Refresh (idle only)</option>
+              </select>
+            </label>
+          </div>
+          <button type="submit" class="primary-button">Add Rule</button>
+        </form>
+      </section>
+
+      <footer class="footer">
+        <span>© 2025 <a href="https://karthiklal.in" target="_blank" rel="noopener noreferrer">KARTHIK LAL</a>. All rights reserved.</span>
+      </footer>
+    </main>
+  </body>
+</html>
