@@ -36,7 +36,9 @@ function cacheElements() {
 }
 
 function bindGlobalEvents() {
-  elements.globalToggle.addEventListener('change', onGlobalToggleChange);
+  if (elements.globalToggle) {
+    elements.globalToggle.addEventListener('change', onGlobalToggleChange);
+  }
   elements.addRuleForm.addEventListener('submit', onAddRuleSubmit);
 
   elements.rulesContainer.addEventListener('change', onRuleChange);
@@ -79,7 +81,9 @@ async function loadState() {
 }
 
 function render() {
-  elements.globalToggle.checked = state.globalEnabled;
+  if (elements.globalToggle) {
+    elements.globalToggle.checked = state.globalEnabled;
+  }
   renderRules();
   applyTheme(state.theme);
   updateBrandLogo();
