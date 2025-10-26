@@ -3,6 +3,3 @@
 
 # Release artifacts
 Pixel-Pulse_*.zip
-
-# Local scripts (not part of the extension package)
-scripts/make_release.sh
