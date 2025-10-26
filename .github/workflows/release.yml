@@ -1,0 +1,88 @@
+name: Build Extension Zip
+
+on:
+  workflow_dispatch:
+    inputs:
+      create_release:
+        description: "Also create a GitHub Release and attach the zip"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      tag:
+        description: "Release tag (defaults to v{version} from manifest.json)"
+        required: false
+        type: string
+      prerelease:
+        description: "Mark the GitHub Release as a prerelease"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Ensure zip utility is available
+        run: |
+          if ! command -v zip >/dev/null 2>&1; then
+            sudo apt-get update -y
+            sudo apt-get install -y zip
+          fi
+
+      - name: Make release script executable
+        run: chmod +x scripts/make_release.sh
+
+      - name: Build release zip
+        run: ./scripts/make_release.sh
+
+      - name: Read version from manifest.json
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('manifest.json','r',encoding='utf-8')).get('version','').strip())")
+          if [ -z "$VERSION" ]; then
+            echo "Failed to read version from manifest.json" >&2
+            exit 1
+          fi
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "zip_name=Pixel-Pulse_${VERSION}.zip" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Pixel-Pulse_${{ steps.version.outputs.version }}
+          path: ${{ steps.version.outputs.zip_name }}
+          if-no-files-found: error
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="v${VERSION}"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.create_release == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          name: Pixel Pulse ${{ steps.tag.outputs.tag }}
+          draft: false
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+          files: |
+            ${{ steps.version.outputs.zip_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
