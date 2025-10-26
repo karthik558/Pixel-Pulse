@@ -38,11 +38,8 @@ jobs:
             sudo apt-get install -y zip
           fi
 
-      - name: Make release script executable
-        run: chmod +x scripts/make_release.sh
-
       - name: Build release zip
-        run: ./scripts/make_release.sh
+        run: bash scripts/make_release.sh
 
       - name: Read version from manifest.json
         id: version
