@@ -33,6 +33,7 @@ function cacheElements() {
   elements.addRuleInterval = document.querySelector('#addRuleInterval');
   elements.addRuleActivity = document.querySelector('#addRuleActivity');
   elements.themeToggle = document.querySelector('#themeToggle');
+  elements.brandLogo = document.querySelector('#brandLogo');
 }
 
 function bindGlobalEvents() {
@@ -41,6 +42,7 @@ function bindGlobalEvents() {
 
   elements.rulesContainer.addEventListener('change', onRuleChange);
   elements.rulesContainer.addEventListener('click', onRuleClick);
+  elements.rulesContainer.addEventListener('keydown', onRuleKeyDown);
 
   chrome.storage.onChanged.addListener(handleStorageChange);
 
@@ -75,6 +77,7 @@ function render() {
   renderRules();
   applyTheme(state.theme);
   updateThemeToggle();
+  updateBrandLogo();
 }
 
 function renderRules() {
@@ -91,30 +94,40 @@ function renderRules() {
     const ruleEl = document.createElement('section');
     ruleEl.className = 'rule';
     ruleEl.dataset.id = rule.id;
+    const collapsibleId = `rule-details-${rule.id}`;
     ruleEl.innerHTML = `
-      <div class="rule-header">
-        <input type="text" class="rule-name" value="${escapeHtml(rule.name || '')}" placeholder="Rule name" />
-        <label class="switch">
+      <div class="rule-header" role="button" tabindex="0" aria-expanded="false" aria-controls="${collapsibleId}">
+        <div class="rule-header-main">
+          <span class="rule-caret" aria-hidden="true">
+            <svg class="rule-caret-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </span>
+          <input type="text" class="rule-name" value="${escapeHtml(rule.name || '')}" placeholder="Rule name" />
+        </div>
+        <label class="switch" title="Enable/disable">
           <input type="checkbox" class="rule-enabled"${rule.enabled === false ? '' : ' checked'} />
           <span class="slider"></span>
         </label>
       </div>
-      <input type="text" class="rule-pattern" value="${escapeHtml(rule.pattern || '')}" placeholder="URL pattern (supports *)" />
-      <div class="rule-grid">
-        <label class="rule-field">
-          <span>Interval (min)</span>
-          <input type="number" class="rule-interval" min="1" value="${Number(rule.intervalMinutes) || 1}" />
-        </label>
-        <label class="rule-field">
-          <span>Activity</span>
-          <select class="rule-activity">
-            ${renderActivityOptions(rule.activity)}
-          </select>
-        </label>
-      </div>
-      <div class="rule-actions">
-        <button type="button" class="rule-save">Save</button>
-        <button type="button" class="rule-delete">Delete</button>
+      <div id="${collapsibleId}" class="collapsible" hidden>
+        <input type="text" class="rule-pattern" value="${escapeHtml(rule.pattern || '')}" placeholder="URL pattern (supports *)" />
+        <div class="rule-grid">
+          <label class="rule-field">
+            <span>Interval (min)</span>
+            <input type="number" class="rule-interval" min="1" value="${Number(rule.intervalMinutes) || 1}" />
+          </label>
+          <label class="rule-field">
+            <span>Activity</span>
+            <select class="rule-activity">
+              ${renderActivityOptions(rule.activity)}
+            </select>
+          </label>
+        </div>
+        <div class="rule-actions">
+          <button type="button" class="rule-save">Save</button>
+          <button type="button" class="rule-delete">Delete</button>
+        </div>
       </div>
     `;
     elements.rulesContainer.appendChild(ruleEl);
@@ -198,6 +211,14 @@ async function onRuleClick(event) {
     return;
   }
 
+  // Toggle expand/collapse when clicking the header (but not on inputs/buttons/switch)
+  const header = target.closest('.rule-header');
+  const isInteractive = target.closest('button, input, select, label');
+  if (header && !isInteractive) {
+    toggleRuleExpansion(ruleEl);
+    return;
+  }
+
   if (target.classList.contains('rule-save')) {
     const updated = readRuleFromElement(ruleEl);
     if (!updated.name || !updated.pattern) {
@@ -209,6 +230,37 @@ async function onRuleClick(event) {
 
   if (target.classList.contains('rule-delete')) {
     await deleteRule(ruleId);
+  }
+}
+
+function onRuleKeyDown(event) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return;
+  const header = target.closest('.rule-header');
+  if (!header) return;
+  const isInteractive = target.closest('input, select, button, label');
+  if (isInteractive) return;
+  const key = event.key;
+  if (key === 'Enter' || key === ' ') {
+    event.preventDefault();
+    const ruleEl = header.closest('.rule');
+    if (ruleEl) toggleRuleExpansion(ruleEl);
+  }
+}
+
+function toggleRuleExpansion(ruleEl) {
+  const isExpanded = ruleEl.classList.toggle('expanded');
+  const collapsible = ruleEl.querySelector('.collapsible');
+  const header = ruleEl.querySelector('.rule-header');
+  if (collapsible) {
+    if (isExpanded) {
+      collapsible.removeAttribute('hidden');
+    } else {
+      collapsible.setAttribute('hidden', '');
+    }
+  }
+  if (header) {
+    header.setAttribute('aria-expanded', String(isExpanded));
   }
 }
 
@@ -408,5 +460,15 @@ async function onThemeToggleClick() {
   state.theme = nextTheme;
   applyTheme(nextTheme);
   updateThemeToggle();
+  updateBrandLogo();
   await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: nextTheme });
+}
+
+function updateBrandLogo() {
+  const logo = elements.brandLogo;
+  if (!logo) return;
+  const theme = validateTheme(state.theme);
+  const darkSrc = logo.getAttribute('data-src-dark') || 'logo_dark.png';
+  const lightSrc = logo.getAttribute('data-src-light') || 'logo_light.png';
+  logo.src = theme === 'light' ? lightSrc : darkSrc;
 }

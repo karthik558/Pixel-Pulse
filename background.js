@@ -2,6 +2,7 @@ const HEARTBEAT_ALARM = 'pixel-pulse-heartbeat';
 const STORAGE_KEYS = {
   GLOBAL_ENABLED: 'globalEnabled',
   RULES: 'rules',
+  THEME: 'theme',
 };
 const LOCAL_KEYS = {
   LAST_EXECUTIONS: 'lastRuleExecutions',
@@ -37,14 +38,31 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
   }
 });
 
+// Update toolbar icon when theme changes
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== 'sync') return;
+  if (STORAGE_KEYS.THEME in changes) {
+    const theme = changes[STORAGE_KEYS.THEME].newValue === 'light' ? 'light' : 'dark';
+    updateActionIcon(theme).catch(() => {});
+  }
+});
+
 async function initialize() {
   await ensureDefaults();
   await primeAlarm();
+  try {
+    const { [STORAGE_KEYS.THEME]: theme } = await chrome.storage.sync.get([STORAGE_KEYS.THEME]);
+    await updateActionIcon(theme === 'light' ? 'light' : 'dark');
+  } catch (e) {}
   await handleHeartbeat();
 }
 
 async function ensureDefaults() {
-  const stored = await chrome.storage.sync.get([STORAGE_KEYS.GLOBAL_ENABLED, STORAGE_KEYS.RULES]);
+  const stored = await chrome.storage.sync.get([
+    STORAGE_KEYS.GLOBAL_ENABLED,
+    STORAGE_KEYS.RULES,
+    STORAGE_KEYS.THEME,
+  ]);
   const updates = {};
 
   if (typeof stored[STORAGE_KEYS.GLOBAL_ENABLED] !== 'boolean') {
@@ -54,6 +72,10 @@ async function ensureDefaults() {
   const rulesMissing = !Array.isArray(stored[STORAGE_KEYS.RULES]);
   if (rulesMissing) {
     updates[STORAGE_KEYS.RULES] = [];
+  }
+
+  if (!stored[STORAGE_KEYS.THEME]) {
+    updates[STORAGE_KEYS.THEME] = 'dark';
   }
 
   if (Object.keys(updates).length > 0) {
@@ -259,4 +281,15 @@ async function queryIdleState() {
       resolve('active');
     }
   });
+}
+
+async function updateActionIcon(theme) {
+  const path = theme === 'light' ? 'logo_light.png' : 'logo_dark.png';
+  try {
+    await chrome.action.setIcon({
+      path: { 16: path, 32: path, 48: path, 128: path },
+    });
+  } catch (e) {
+    // ignore if not supported
+  }
 }
