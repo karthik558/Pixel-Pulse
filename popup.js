@@ -32,7 +32,6 @@ function cacheElements() {
   elements.addRulePattern = document.querySelector('#addRulePattern');
   elements.addRuleInterval = document.querySelector('#addRuleInterval');
   elements.addRuleActivity = document.querySelector('#addRuleActivity');
-  elements.themeToggle = document.querySelector('#themeToggle');
   elements.brandLogo = document.querySelector('#brandLogo');
 }
 
@@ -45,8 +44,15 @@ function bindGlobalEvents() {
   elements.rulesContainer.addEventListener('keydown', onRuleKeyDown);
 
   chrome.storage.onChanged.addListener(handleStorageChange);
-
-  elements.themeToggle.addEventListener('click', onThemeToggleClick);
+  if (elements.brandLogo) {
+    elements.brandLogo.addEventListener('click', onThemeToggleClick);
+    elements.brandLogo.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        onThemeToggleClick();
+      }
+    });
+  }
 }
 
 async function bootstrap() {
@@ -76,7 +82,6 @@ function render() {
   elements.globalToggle.checked = state.globalEnabled;
   renderRules();
   applyTheme(state.theme);
-  updateThemeToggle();
   updateBrandLogo();
 }
 
@@ -295,49 +300,47 @@ async function deleteRule(ruleId) {
 }
 
 async function updateStatusIndicator() {
-  const [{ lastStatus }, settings, activeTab] = await Promise.all([
+  if (!elements.statusText) return;
+
+  const [{ lastStatus }, settings] = await Promise.all([
     chrome.storage.local.get([LOCAL_KEYS.LAST_STATUS]),
-    chrome.storage.sync.get([STORAGE_KEYS.GLOBAL_ENABLED, STORAGE_KEYS.RULES]),
-    queryActiveTab(),
+    chrome.storage.sync.get([STORAGE_KEYS.GLOBAL_ENABLED]),
   ]);
 
   const globalEnabled = settings[STORAGE_KEYS.GLOBAL_ENABLED] !== false;
-  const rules = Array.isArray(settings[STORAGE_KEYS.RULES]) ? settings[STORAGE_KEYS.RULES] : [];
-
   if (!globalEnabled) {
     elements.statusText.textContent = 'Inactive (paused)';
     return;
   }
 
-  if (!activeTab || !isHttpUrl(activeTab.url)) {
-    elements.statusText.textContent = 'Inactive (no active page)';
-    return;
-  }
-
-  const matchingRule = findMatchingRule(activeTab.url, rules);
-  if (!matchingRule) {
-    elements.statusText.textContent = 'Inactive (no matching rule)';
-    return;
-  }
-
   const status = lastStatus || {};
-  if (status.state === 'error' && status.ruleId === matchingRule.id) {
+  if (status.state === 'active') {
+    const suffix = status.lastRunAt ? ` · Last pulse ${formatRelative(status.lastRunAt)}` : '';
+    elements.statusText.textContent = `Active: ${status.ruleName || 'Rule'}${suffix}`;
+    return;
+  }
+
+  if (status.state === 'error') {
     elements.statusText.textContent = 'Error (check console)';
     return;
   }
 
-  if (status.state === 'inactive' && status.ruleId === matchingRule.id) {
+  if (status.state === 'inactive') {
     if (status.reason === 'user-active') {
       elements.statusText.textContent = 'Inactive (waiting for idle)';
       return;
     }
-    elements.statusText.textContent = 'Inactive';
-    return;
+    if (status.reason === 'no-rules') {
+      elements.statusText.textContent = 'Inactive (no rules)';
+      return;
+    }
+    if (status.reason === 'no-match') {
+      elements.statusText.textContent = 'Inactive (no matching tab)';
+      return;
+    }
   }
 
-  const lastRunAt = status.ruleId === matchingRule.id ? status.lastRunAt : undefined;
-  const suffix = lastRunAt ? ` · Last pulse ${formatRelative(lastRunAt)}` : '';
-  elements.statusText.textContent = `Active: ${matchingRule.name}${suffix}`;
+  elements.statusText.textContent = 'Inactive';
 }
 
 function handleStorageChange(changes, area) {
@@ -356,7 +359,7 @@ function handleStorageChange(changes, area) {
     if (STORAGE_KEYS.THEME in changes) {
       state.theme = validateTheme(changes[STORAGE_KEYS.THEME].newValue);
       applyTheme(state.theme);
-      updateThemeToggle();
+      updateBrandLogo();
     }
     if (needsRender) {
       render();
@@ -414,7 +417,9 @@ function formatRelative(timestamp) {
 }
 
 function showStatus(message) {
-  elements.statusText.textContent = message;
+  if (elements.statusText) {
+    elements.statusText.textContent = message;
+  }
 }
 
 function createRuleId() {
@@ -442,24 +447,12 @@ function validateTheme(theme) {
   return theme === 'light' ? 'light' : 'dark';
 }
 
-function updateThemeToggle() {
-  if (!elements.themeToggle) {
-    return;
-  }
-  const isDark = state.theme !== 'light';
-  elements.themeToggle.setAttribute('aria-pressed', String(isDark));
-  elements.themeToggle.classList.toggle('is-dark', isDark);
-  elements.themeToggle.classList.toggle('is-light', !isDark);
-  const nextLabel = isDark ? 'Switch to light mode' : 'Switch to dark mode';
-  elements.themeToggle.setAttribute('aria-label', nextLabel);
-  elements.themeToggle.setAttribute('title', nextLabel);
-}
+// Theme toggle is handled by clicking the brand logo now; no separate toggle button element.
 
 async function onThemeToggleClick() {
   const nextTheme = state.theme === 'dark' ? 'light' : 'dark';
   state.theme = nextTheme;
   applyTheme(nextTheme);
-  updateThemeToggle();
   updateBrandLogo();
   await chrome.storage.sync.set({ [STORAGE_KEYS.THEME]: nextTheme });
 }
@@ -471,4 +464,6 @@ function updateBrandLogo() {
   const darkSrc = logo.getAttribute('data-src-dark') || 'logo_dark.png';
   const lightSrc = logo.getAttribute('data-src-light') || 'logo_light.png';
   logo.src = theme === 'light' ? lightSrc : darkSrc;
+  const nextLabel = theme === 'light' ? 'Switch to dark mode' : 'Switch to light mode';
+  logo.setAttribute('aria-label', nextLabel);
 }

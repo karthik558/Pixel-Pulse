@@ -96,61 +96,52 @@ async function handleHeartbeat() {
   const rules = Array.isArray(settings[STORAGE_KEYS.RULES]) ? settings[STORAGE_KEYS.RULES] : [];
 
   if (!globalEnabled) {
-    await writeStatus({
-      state: 'inactive',
-      reason: 'paused',
-      timestamp: Date.now(),
-    });
+    await writeStatus({ state: 'inactive', reason: 'paused', timestamp: Date.now() });
     return;
   }
 
   if (!rules.length) {
-    await writeStatus({
-      state: 'inactive',
-      reason: 'no-rules',
-      timestamp: Date.now(),
-    });
+    await writeStatus({ state: 'inactive', reason: 'no-rules', timestamp: Date.now() });
     return;
   }
 
-  const activeTab = await getActiveTab();
-  if (!activeTab || !isHttpUrl(activeTab.url)) {
-    await writeStatus({
-      state: 'inactive',
-      reason: 'no-tab',
-      timestamp: Date.now(),
-    });
+  // Look across all open http(s) tabs; pick the first tab that matches any rule
+  const tabs = await chrome.tabs.query({});
+  const httpTabs = tabs.filter((t) => t && isHttpUrl(t.url));
+
+  let selected = null; // { tab, rule }
+  for (const rule of rules) {
+    if (!rule || rule.enabled === false || !rule.pattern) continue;
+    const tab = httpTabs.find((t) => matchesPattern(t.url, rule.pattern));
+    if (tab) {
+      selected = { tab, rule };
+      break;
+    }
+  }
+
+  if (!selected) {
+    await writeStatus({ state: 'inactive', reason: 'no-match', timestamp: Date.now() });
     return;
   }
 
-  const matchingRule = findMatchingRule(activeTab.url, rules);
-  if (!matchingRule) {
-    await writeStatus({
-      state: 'inactive',
-      reason: 'no-match',
-      url: activeTab.url,
-      timestamp: Date.now(),
-    });
-    return;
-  }
-
+  const { tab, rule } = selected;
   const now = Date.now();
-  const ruleIntervalMs = Math.max(1, Number(matchingRule.intervalMinutes) || 1) * 60_000;
+  const ruleIntervalMs = Math.max(1, Number(rule.intervalMinutes) || 1) * 60_000;
   const localState = await chrome.storage.local.get([LOCAL_KEYS.LAST_EXECUTIONS]);
   const lastExecMap = localState[LOCAL_KEYS.LAST_EXECUTIONS] || {};
-  const lastRun = lastExecMap[matchingRule.id];
+  const lastRun = lastExecMap[rule.id];
   const due = !lastRun || now - lastRun >= ruleIntervalMs;
 
   if (due) {
-    if ((matchingRule.activity || '').toLowerCase() === 'refresh') {
+    if ((rule.activity || '').toLowerCase() === 'refresh') {
       const idleState = await queryIdleState();
       if (idleState === 'active') {
         await writeStatus({
           state: 'inactive',
           reason: 'user-active',
-          ruleId: matchingRule.id,
-          ruleName: matchingRule.name,
-          url: activeTab.url,
+          ruleId: rule.id,
+          ruleName: rule.name,
+          url: tab.url,
           timestamp: now,
         });
         return;
@@ -158,23 +149,23 @@ async function handleHeartbeat() {
     }
 
     try {
-      await runActivity(activeTab.id, matchingRule);
-      lastExecMap[matchingRule.id] = now;
+      await runActivity(tab.id, rule);
+      lastExecMap[rule.id] = now;
       await chrome.storage.local.set({ [LOCAL_KEYS.LAST_EXECUTIONS]: lastExecMap });
       await writeStatus({
         state: 'active',
-        ruleId: matchingRule.id,
-        ruleName: matchingRule.name,
+        ruleId: rule.id,
+        ruleName: rule.name,
         lastRunAt: now,
-        url: activeTab.url,
+        url: tab.url,
         timestamp: now,
       });
     } catch (error) {
       console.error('[Pixel Pulse] Activity execution failed', error);
       await writeStatus({
         state: 'error',
-        ruleId: matchingRule.id,
-        ruleName: matchingRule.name,
+        ruleId: rule.id,
+        ruleName: rule.name,
         reason: 'execution-failed',
         error: error.message,
         timestamp: Date.now(),
@@ -183,10 +174,10 @@ async function handleHeartbeat() {
   } else {
     await writeStatus({
       state: 'active',
-      ruleId: matchingRule.id,
-      ruleName: matchingRule.name,
+      ruleId: rule.id,
+      ruleName: rule.name,
       lastRunAt: lastRun,
-      url: activeTab.url,
+      url: tab.url,
       timestamp: now,
     });
   }
@@ -286,9 +277,7 @@ async function queryIdleState() {
 async function updateActionIcon(theme) {
   const path = theme === 'light' ? 'logo_light.png' : 'logo_dark.png';
   try {
-    await chrome.action.setIcon({
-      path: { 16: path, 32: path, 48: path, 128: path },
-    });
+    await chrome.action.setIcon({ path });
   } catch (e) {
     // ignore if not supported
   }
