@@ -204,6 +204,12 @@ input:checked + .slider:before {
   gap: 10px;
 }
 
+.rules-list-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 .rule-card {
   background: var(--bg-module);
   border-radius: var(--radius);
@@ -315,6 +321,35 @@ input:checked + .slider:before {
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: background 0.2s;
+}
+
+.delete-btn:hover {
+  background: rgba(255, 59, 48, 0.1);
+}
+
+.run-now-btn {
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid var(--accent);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 6px 12px;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.run-now-btn:hover {
+  background: var(--accent);
+  color: white;
+}
+
+.run-now-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Form */

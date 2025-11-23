@@ -69,10 +69,18 @@ function initializeUI() {
 function render() {
   applyTheme();
   renderStatus();
-  renderRules();
+  // Initial render of the list
+  renderRulesList();
 
   const globalToggle = document.getElementById('globalToggle');
   globalToggle.checked = state.globalEnabled;
+
+  // Auto-refresh status every 2 seconds without rebuilding DOM
+  setInterval(() => {
+    if (state.globalEnabled) {
+      updateRuleStatuses();
+    }
+  }, 2000);
 }
 
 function applyTheme() {
@@ -94,53 +102,43 @@ function renderStatus() {
   }
 }
 
-async function renderRules() {
+async function renderRulesList() {
   const container = document.getElementById('rulesContainer');
-  container.innerHTML = '';
 
   if (state.rules.length === 0) {
     container.innerHTML = '<div class="empty-state">No active rules. Add one below.</div>';
     return;
   }
 
-  const localData = await chrome.storage.local.get(['lastRuleExecutions']);
-  const lastExecutions = localData.lastRuleExecutions || {};
-  const now = Date.now();
+  // Check if we need to rebuild (e.g. rule added/removed)
+  // For now, we'll just rebuild if the count differs or if it's empty
+  // A more robust diffing could be added, but this suffices for "add/delete" actions
+  // which trigger a re-render anyway.
 
-  state.rules.forEach(rule => {
+  // We will rebuild the list, but the interval will ONLY call updateRuleStatuses
+
+  const newContent = document.createElement('div');
+  newContent.className = 'rules-list-wrapper';
+
+  for (const rule of state.rules) {
     const card = document.createElement('div');
     card.className = 'rule-card';
     card.dataset.id = rule.id;
 
-    const lastRun = lastExecutions[rule.id];
-    let statusHtml = '';
-
-    if (lastRun) {
-      const intervalMs = (rule.intervalMinutes || 5) * 60000;
-      const nextRun = lastRun + intervalMs;
-      const isDue = now >= nextRun;
-
-      statusHtml = `
-        <div class="rule-status-info">
-          <div class="status-item">
-            <span class="status-label">Last:</span>
-            <span class="status-value">${formatTime(lastRun)}</span>
-          </div>
-          <div class="status-item">
-            <span class="status-label">Next:</span>
-            <span class="status-value ${isDue ? 'status-due' : ''}">${isDue ? 'Due now' : formatTime(nextRun)}</span>
-          </div>
-        </div>
-      `;
-    } else {
-      statusHtml = `
-        <div class="rule-status-info">
-          <div class="status-item">
-            <span class="status-value">Waiting for first run...</span>
-          </div>
-        </div>
-      `;
+    // Preserve expanded state if existing card matches
+    const existingCard = document.querySelector(`.rule-card[data-id="${rule.id}"]`);
+    if (existingCard && existingCard.classList.contains('expanded')) {
+      card.classList.add('expanded');
     }
+
+    // Initial status placeholder
+    const statusHtml = `
+      <div class="rule-status-info">
+        <div class="status-item">
+          <span class="status-value status-text">Loading...</span>
+        </div>
+      </div>
+    `;
 
     card.innerHTML = `
       <div class="rule-header">
@@ -176,11 +174,93 @@ async function renderRules() {
             <input type="checkbox" class="edit-enabled" ${rule.enabled ? 'checked' : ''}>
             <span class="slider"></span>
           </label>
-          <button class="delete-btn">Delete</button>
+          <div style="display:flex; gap:8px;">
+            <button class="run-now-btn" title="Run this rule immediately">Run Now</button>
+            <button class="delete-btn">Delete</button>
+          </div>
         </div>
       </div>
     `;
-    container.appendChild(card);
+    newContent.appendChild(card);
+  }
+
+  container.innerHTML = '';
+  container.appendChild(newContent);
+
+  // Immediately update status after rendering
+  updateRuleStatuses();
+}
+
+async function updateRuleStatuses() {
+  const localData = await chrome.storage.local.get(['lastRuleExecutions']);
+  const lastExecutions = localData.lastRuleExecutions || {};
+  const now = Date.now();
+  const tabs = await chrome.tabs.query({});
+
+  state.rules.forEach(rule => {
+    const card = document.querySelector(`.rule-card[data-id="${rule.id}"]`);
+    if (!card) return;
+
+    const statusContainer = card.querySelector('.rule-status-info');
+    if (!statusContainer) return;
+
+    // Check matches
+    const matches = tabs.some(t => {
+      try {
+        const cleanPattern = rule.pattern.trim();
+        const cleanUrl = t.url.trim();
+        // Simple substring match if no wildcards
+        if (!cleanPattern.includes('*')) {
+          return cleanUrl.toLowerCase().includes(cleanPattern.toLowerCase());
+        }
+        // Glob matching
+        let pattern = cleanPattern;
+        if (!/^[a-zA-Z0-9+.-]+:\/\//.test(pattern) && !pattern.startsWith('*://')) {
+          pattern = '*://' + pattern;
+        }
+        const protocolIndex = pattern.indexOf('://');
+        const afterProtocol = pattern.substring(protocolIndex + 3);
+        if (!afterProtocol.includes('/')) {
+          pattern += '/*';
+        }
+        const escaped = pattern.split('*').map(s => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*');
+        const isMatch = new RegExp(`^${escaped}$`, 'i').test(cleanUrl);
+        if (isMatch) console.log('[Pixel Pulse] Match found:', cleanUrl, 'for pattern:', rule.pattern);
+        return isMatch;
+      } catch (e) {
+        console.error('Match error:', e);
+        return false;
+      }
+    });
+
+    const lastRun = lastExecutions[rule.id];
+
+    if (lastRun) {
+      const intervalMs = (rule.intervalMinutes || 5) * 60000;
+      const nextRun = lastRun + intervalMs;
+      // Show "Due now" only if it's overdue by more than 10 seconds, otherwise show time
+      // This prevents it from saying "Due now" while the background script is just about to run
+      const isOverdue = now >= (nextRun + 10000);
+
+      statusContainer.innerHTML = `
+        <div class="status-item">
+          <span class="status-label">Last:</span>
+          <span class="status-value">${formatTime(lastRun)}</span>
+        </div>
+        <div class="status-item">
+          <span class="status-label">Next:</span>
+          <span class="status-value ${isOverdue ? 'status-due' : ''}">${isOverdue ? 'Due now' : formatTime(nextRun)}</span>
+        </div>
+      `;
+    } else {
+      statusContainer.innerHTML = `
+        <div class="status-item">
+          <span class="status-value" style="color: ${matches ? 'var(--text-secondary)' : '#ff3b30'}">
+            ${matches ? 'Waiting for first run...' : 'No open tab matches this rule'}
+          </span>
+        </div>
+      `;
+    }
   });
 }
 
@@ -216,7 +296,11 @@ async function addRule() {
 
     nameInput.value = '';
     patternInput.value = '';
-    renderRules();
+    renderRulesList();
+
+    // Trigger immediate check
+    chrome.runtime.sendMessage({ action: 'FORCE_HEARTBEAT' });
+
   } catch (error) {
     console.error('Failed to add rule:', error);
     alert('Failed to add rule. Please try again.');
@@ -247,8 +331,59 @@ async function handleRuleClick(e) {
     if (confirm('Delete this rule?')) {
       state.rules = state.rules.filter(r => r.id !== ruleId);
       await chrome.storage.sync.set({ [STORAGE_KEYS.RULES]: state.rules });
-      renderRules();
+      renderRulesList();
     }
+    return;
+  }
+
+  // Run Now
+  if (e.target.classList.contains('run-now-btn')) {
+    const btn = e.target;
+    const originalText = btn.textContent;
+    btn.textContent = 'Running...';
+    btn.disabled = true;
+
+    try {
+      // Try to ping first to wake up SW
+      try { await chrome.runtime.sendMessage({ action: 'PING' }); } catch (e) { }
+
+      const response = await sendMessageWithRetry({ action: 'RUN_RULE', ruleId });
+
+      if (response && response.success) {
+        btn.textContent = 'Done!';
+        updateRuleStatuses();
+      } else {
+        btn.textContent = 'Failed';
+        const errorMsg = response ? response.error : 'Unknown error';
+        console.error('Run failed:', errorMsg);
+        alert('Run failed: ' + errorMsg);
+      }
+    } catch (err) {
+      btn.textContent = 'Error';
+      console.error('Run error:', err);
+      if (err.message.includes('Receiving end does not exist')) {
+        alert('Extension background process is not running. Please reload the extension from chrome://extensions.');
+      } else {
+        alert('Communication error: ' + err.message);
+      }
+    }
+
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 2000);
+  }
+}
+
+async function sendMessageWithRetry(message, retries = 2, delay = 100) {
+  try {
+    return await chrome.runtime.sendMessage(message);
+  } catch (error) {
+    if (retries > 0) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      return sendMessageWithRetry(message, retries - 1, delay * 2);
+    }
+    throw error;
   }
 }
 

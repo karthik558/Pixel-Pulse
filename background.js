@@ -12,7 +12,25 @@ const IDLE_THRESHOLD_SECONDS = 60;
 
 const injectedTabs = new Set();
 
-initialize();
+// Register listener immediately
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'PING') {
+    sendResponse('PONG');
+    return false;
+  }
+  if (request.action === 'FORCE_HEARTBEAT') {
+    handleHeartbeat().then(() => sendResponse({ success: true }));
+    return true; // Keep channel open
+  }
+  if (request.action === 'RUN_RULE') {
+    runSingleRule(request.ruleId).then((result) => sendResponse(result));
+    return true;
+  }
+});
+
+chrome.runtime.onStartup.addListener(() => {
+  initialize().catch(e => console.error('[Pixel Pulse] Startup failed', e));
+});
 
 chrome.runtime.onInstalled.addListener(async (details) => {
   await ensureDefaults();
@@ -46,6 +64,46 @@ chrome.storage.onChanged.addListener((changes, area) => {
     updateActionIcon(theme).catch(() => { });
   }
 });
+
+async function runSingleRule(ruleId) {
+  const settings = await chrome.storage.sync.get([STORAGE_KEYS.RULES]);
+  const rules = settings[STORAGE_KEYS.RULES] || [];
+  const rule = rules.find(r => r.id === ruleId);
+  if (!rule) return { success: false, error: 'Rule not found' };
+
+  const tabs = await chrome.tabs.query({});
+  const httpTabs = tabs.filter((t) => t && isHttpUrl(t.url));
+  const matchingTabs = httpTabs.filter((t) => matchesPattern(t.url, rule.pattern));
+
+  if (matchingTabs.length === 0) return { success: false, error: 'No matching tabs' };
+
+  let executed = 0;
+  let lastError = null;
+
+  for (const tab of matchingTabs) {
+    try {
+      await runActivity(tab.id, rule);
+      executed++;
+
+      // Update last execution time immediately
+      const now = Date.now();
+      const localState = await chrome.storage.local.get([LOCAL_KEYS.LAST_EXECUTIONS]);
+      const lastExecMap = localState[LOCAL_KEYS.LAST_EXECUTIONS] || {};
+      lastExecMap[rule.id] = now;
+      await chrome.storage.local.set({ [LOCAL_KEYS.LAST_EXECUTIONS]: lastExecMap });
+
+    } catch (e) {
+      console.error('Manual run failed', e);
+      lastError = e.message;
+    }
+  }
+
+  if (executed === 0) {
+    return { success: false, error: lastError || 'Execution failed on all matching tabs' };
+  }
+
+  return { success: true, executedCount: executed };
+}
 
 async function initialize() {
   await ensureDefaults();
@@ -87,11 +145,18 @@ async function ensureDefaults() {
 }
 
 async function primeAlarm() {
+  // Clear existing to ensure update
+  await chrome.alarms.clear(HEARTBEAT_ALARM);
   await chrome.alarms.create(HEARTBEAT_ALARM, {
-    periodInMinutes: 1,
+    periodInMinutes: 0.5, // Check every 30 seconds
     delayInMinutes: 0.1,
   });
 }
+
+// Fallback interval for more reliable timing if alarm sleeps
+setInterval(() => {
+  handleHeartbeat().catch(e => console.error('Interval heartbeat failed', e));
+}, 30000);
 
 async function handleHeartbeat() {
   const settings = await chrome.storage.sync.get([STORAGE_KEYS.GLOBAL_ENABLED, STORAGE_KEYS.RULES]);
@@ -108,83 +173,69 @@ async function handleHeartbeat() {
     return;
   }
 
-  // Look across all open http(s) tabs; pick the first tab that matches any rule
   const tabs = await chrome.tabs.query({});
   const httpTabs = tabs.filter((t) => t && isHttpUrl(t.url));
-
-  let selected = null; // { tab, rule }
-  for (const rule of rules) {
-    if (!rule || rule.enabled === false || !rule.pattern) continue;
-    const tab = httpTabs.find((t) => matchesPattern(t.url, rule.pattern));
-    if (tab) {
-      selected = { tab, rule };
-      break;
-    }
-  }
-
-  if (!selected) {
-    await writeStatus({ state: 'inactive', reason: 'no-match', timestamp: Date.now() });
-    return;
-  }
-
-  const { tab, rule } = selected;
   const now = Date.now();
-  const ruleIntervalMs = Math.max(1, Number(rule.intervalMinutes) || 1) * 60_000;
+
   const localState = await chrome.storage.local.get([LOCAL_KEYS.LAST_EXECUTIONS]);
   const lastExecMap = localState[LOCAL_KEYS.LAST_EXECUTIONS] || {};
-  const lastRun = lastExecMap[rule.id];
-  const due = !lastRun || now - lastRun >= ruleIntervalMs;
+  let anyActive = false;
 
-  if (due) {
-    if ((rule.activity || '').toLowerCase() === 'refresh') {
-      const idleState = await queryIdleState();
-      if (idleState === 'active') {
+  // Check every rule against every tab
+  for (const rule of rules) {
+    if (!rule || rule.enabled === false || !rule.pattern) continue;
+
+    const matchingTabs = httpTabs.filter((t) => matchesPattern(t.url, rule.pattern));
+
+    for (const tab of matchingTabs) {
+      anyActive = true;
+      const ruleIntervalMs = Math.max(1, Number(rule.intervalMinutes) || 1) * 60_000;
+      const lastRun = lastExecMap[rule.id];
+      const due = !lastRun || now - lastRun >= ruleIntervalMs;
+
+      if (due) {
+        // Skip refresh if user is active
+        if ((rule.activity || '').toLowerCase() === 'refresh') {
+          const idleState = await queryIdleState();
+          if (idleState === 'active') continue;
+        }
+
+        try {
+          await runActivity(tab.id, rule);
+          console.log('[Pixel Pulse] Pulse sent', { tabId: tab.id, url: tab.url, rule: rule.name });
+
+          // Update last execution time
+          lastExecMap[rule.id] = now;
+          await chrome.storage.local.set({ [LOCAL_KEYS.LAST_EXECUTIONS]: lastExecMap });
+
+          await writeStatus({
+            state: 'active',
+            ruleId: rule.id,
+            ruleName: rule.name,
+            lastRunAt: now,
+            url: tab.url,
+            timestamp: now,
+          });
+          flashBadge();
+        } catch (error) {
+          console.error('[Pixel Pulse] Execution failed', error);
+        }
+      } else {
+        // Just update status to show it's tracking
         await writeStatus({
-          state: 'inactive',
-          reason: 'user-active',
+          state: 'active',
           ruleId: rule.id,
           ruleName: rule.name,
+          lastRunAt: lastRun,
           url: tab.url,
           timestamp: now,
         });
-        return;
       }
     }
+  }
 
-    try {
-      await runActivity(tab.id, rule);
-      console.log('[Pixel Pulse] Pulse sent', { tabId: tab.id, url: tab.url, rule: rule.name });
-      lastExecMap[rule.id] = now;
-      await chrome.storage.local.set({ [LOCAL_KEYS.LAST_EXECUTIONS]: lastExecMap });
-      await writeStatus({
-        state: 'active',
-        ruleId: rule.id,
-        ruleName: rule.name,
-        lastRunAt: now,
-        url: tab.url,
-        timestamp: now,
-      });
-      flashBadge();
-    } catch (error) {
-      console.error('[Pixel Pulse] Activity execution failed', error);
-      await writeStatus({
-        state: 'error',
-        ruleId: rule.id,
-        ruleName: rule.name,
-        reason: 'execution-failed',
-        error: error.message,
-        timestamp: Date.now(),
-      });
-    }
-  } else {
-    await writeStatus({
-      state: 'active',
-      ruleId: rule.id,
-      ruleName: rule.name,
-      lastRunAt: lastRun,
-      url: tab.url,
-      timestamp: now,
-    });
+  if (!anyActive) {
+    await writeStatus({ state: 'inactive', reason: 'no-match', timestamp: Date.now() });
   }
 }
 
@@ -274,20 +325,37 @@ function findMatchingRule(url, rules) {
 }
 
 function matchesPattern(url, pattern) {
-  let cleanPattern = pattern.trim();
-  // If no protocol specified, assume *://
-  if (!/^[a-zA-Z0-9+.-]+:\/\//.test(cleanPattern) && !cleanPattern.startsWith('*://')) {
-    cleanPattern = '*://' + cleanPattern;
-  }
-
-  const escaped = cleanPattern
-    .split('*')
-    .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
-    .join('.*');
-
-  const expression = `^${escaped}$`;
   try {
-    return new RegExp(expression).test(url);
+    const cleanPattern = pattern.trim();
+    const cleanUrl = url.trim();
+
+    // If pattern has no wildcards, perform a simple case-insensitive substring match
+    // This is often what users expect (e.g. "google.com" matches "https://www.google.com/...")
+    if (!cleanPattern.includes('*')) {
+      return cleanUrl.toLowerCase().includes(cleanPattern.toLowerCase());
+    }
+
+    // Otherwise, use glob matching
+    let normalizedPattern = cleanPattern;
+
+    // 1. Handle missing protocol
+    if (!/^[a-zA-Z0-9+.-]+:\/\//.test(normalizedPattern) && !normalizedPattern.startsWith('*://')) {
+      normalizedPattern = '*://' + normalizedPattern;
+    }
+
+    // 2. Handle missing path wildcard
+    const protocolIndex = normalizedPattern.indexOf('://');
+    const afterProtocol = normalizedPattern.substring(protocolIndex + 3);
+    if (!afterProtocol.includes('/')) {
+      normalizedPattern += '/*';
+    }
+
+    const escaped = normalizedPattern
+      .split('*')
+      .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
+      .join('.*');
+
+    return new RegExp(`^${escaped}$`, 'i').test(cleanUrl);
   } catch (error) {
     console.warn('[Pixel Pulse] Invalid pattern ignored', pattern, error);
     return false;

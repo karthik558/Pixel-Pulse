@@ -7,18 +7,26 @@
   const activities = {
     mousemove() {
       const target = document.body || document.documentElement;
-      if (!target) {
-        return;
-      }
+      if (!target) return;
+
       const x = Math.floor(Math.random() * window.innerWidth);
       const y = Math.floor(Math.random() * window.innerHeight);
-      const event = new MouseEvent('mousemove', {
-        bubbles: true,
-        cancelable: true,
-        clientX: x,
-        clientY: y,
+
+      // Simulate a sequence of events to ensure activity is registered
+      const events = ['mousemove', 'mouseover', 'mousedown', 'mouseup', 'click'];
+
+      events.forEach(type => {
+        const event = new MouseEvent(type, {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: x,
+          clientY: y,
+          screenX: x, // Some sites check screenX/Y
+          screenY: y
+        });
+        target.dispatchEvent(event);
       });
-      target.dispatchEvent(event);
     },
     scroll() {
       const element = document.scrollingElement || document.body || document.documentElement;
@@ -37,8 +45,12 @@
     ping() {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 4000);
-      fetch(window.location.href, {
-        method: 'GET',
+      // Add cache buster to ensure network request actually goes out
+      const url = new URL(window.location.href);
+      url.searchParams.set('_pp_ping', Date.now());
+
+      fetch(url.toString(), {
+        method: 'HEAD', // HEAD is lighter than GET
         cache: 'no-store',
         mode: 'no-cors',
         signal: controller.signal,
