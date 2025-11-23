@@ -162,21 +162,33 @@ async function addRule() {
 
   if (!name || !pattern) return;
 
-  const newRule = {
-    id: crypto.randomUUID(),
-    name,
-    pattern,
-    intervalMinutes: parseInt(intervalInput.value) || 5,
-    activity: activityInput.value,
-    enabled: true
-  };
+  try {
+    const newRule = {
+      id: createRuleId(),
+      name,
+      pattern,
+      intervalMinutes: parseInt(intervalInput.value) || 5,
+      activity: activityInput.value,
+      enabled: true
+    };
 
-  state.rules.push(newRule);
-  await chrome.storage.sync.set({ [STORAGE_KEYS.RULES]: state.rules });
+    state.rules.push(newRule);
+    await chrome.storage.sync.set({ [STORAGE_KEYS.RULES]: state.rules });
 
-  nameInput.value = '';
-  patternInput.value = '';
-  renderRules();
+    nameInput.value = '';
+    patternInput.value = '';
+    renderRules();
+  } catch (error) {
+    console.error('Failed to add rule:', error);
+    alert('Failed to add rule. Please try again.');
+  }
+}
+
+function createRuleId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return 'rule-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 }
 
 async function handleRuleClick(e) {

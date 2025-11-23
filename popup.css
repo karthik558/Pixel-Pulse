@@ -310,12 +310,16 @@ select {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
-  background: rgba(120, 120, 128, 0.08);
+  background: var(--bg-module); /* Solid background for better OS compatibility */
   color: var(--text-primary);
   font-size: 13px;
   font-family: inherit;
   outline: none;
   transition: border-color 0.2s, background 0.2s;
+}
+
+select {
+  cursor: pointer;
 }
 
 input:focus,
