@@ -1,4 +1,5 @@
 (() => {
+  console.log('[Pixel Pulse] Content script loaded');
   const state = {
     scrollDirection: 1,
   };
@@ -22,10 +23,15 @@
     scroll() {
       const element = document.scrollingElement || document.body || document.documentElement;
       if (!element) {
+        console.warn('[Pixel Pulse] No scrolling element found');
         return;
       }
       const delta = state.scrollDirection * 2;
-      element.scrollBy({ top: delta, behavior: 'smooth' });
+      if (typeof element.scrollBy === 'function') {
+        element.scrollBy({ top: delta, behavior: 'smooth' });
+      } else {
+        element.scrollTop += delta;
+      }
       state.scrollDirection *= -1;
     },
     ping() {

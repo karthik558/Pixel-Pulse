@@ -43,7 +43,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'sync') return;
   if (STORAGE_KEYS.THEME in changes) {
     const theme = changes[STORAGE_KEYS.THEME].newValue === 'light' ? 'light' : 'dark';
-    updateActionIcon(theme).catch(() => {});
+    updateActionIcon(theme).catch(() => { });
   }
 });
 
@@ -53,10 +53,10 @@ async function initialize() {
   try {
     const { [STORAGE_KEYS.THEME]: theme } = await chrome.storage.sync.get([STORAGE_KEYS.THEME]);
     await updateActionIcon(theme === 'light' ? 'light' : 'dark');
-  } catch (e) {}
+  } catch (e) { }
   try {
     await chrome.action.setBadgeBackgroundColor({ color: '#0ea5e9' });
-  } catch (e) {}
+  } catch (e) { }
   await handleHeartbeat();
 }
 
@@ -194,27 +194,41 @@ function flashBadge() {
     setTimeout(() => {
       chrome.action.setBadgeText({ text: '' });
     }, 2500);
-  } catch (e) {}
+  } catch (e) { }
 }
 
 async function runActivity(tabId, rule) {
-  await ensureContentScript(tabId);
-  await chrome.scripting.executeScript({
-    target: { tabId },
-    func: (payload) => {
-      if (window.pixelPulseRun) {
-        window.pixelPulseRun(payload);
-      } else {
-        console.warn('[Pixel Pulse] Injection incomplete on tab', payload);
-      }
-    },
-    args: [
-      {
-        rule,
-        timestamp: Date.now(),
+  try {
+    await ensureContentScript(tabId);
+    const result = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (payload) => {
+        if (typeof window.pixelPulseRun === 'function') {
+          window.pixelPulseRun(payload);
+          return true;
+        }
+        return false;
       },
-    ],
-  });
+      args: [{ rule, timestamp: Date.now() }],
+    });
+
+    // If the function returned false (pixelPulseRun not found), force re-injection
+    if (result && result[0] && result[0].result === false) {
+      console.warn('[Pixel Pulse] Re-injecting content script for tab', tabId);
+      injectedTabs.delete(tabId);
+      await ensureContentScript(tabId);
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (payload) => {
+          if (window.pixelPulseRun) window.pixelPulseRun(payload);
+        },
+        args: [{ rule, timestamp: Date.now() }],
+      });
+    }
+  } catch (e) {
+    console.error('[Pixel Pulse] Failed to run activity', e);
+    throw e;
+  }
 }
 
 async function ensureContentScript(tabId) {
@@ -260,10 +274,17 @@ function findMatchingRule(url, rules) {
 }
 
 function matchesPattern(url, pattern) {
-  const escaped = pattern
+  let cleanPattern = pattern.trim();
+  // If no protocol specified, assume *://
+  if (!/^[a-zA-Z0-9+.-]+:\/\//.test(cleanPattern) && !cleanPattern.startsWith('*://')) {
+    cleanPattern = '*://' + cleanPattern;
+  }
+
+  const escaped = cleanPattern
     .split('*')
     .map((segment) => segment.replace(/[.+?^${}()|[\]\\]/g, '\\$&'))
     .join('.*');
+
   const expression = `^${escaped}$`;
   try {
     return new RegExp(expression).test(url);
