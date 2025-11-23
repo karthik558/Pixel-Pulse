@@ -2,72 +2,70 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Pixel Pulse</title>
     <link rel="stylesheet" href="popup.css" />
     <script src="popup.js" defer></script>
   </head>
   <body>
-    <main class="container">
+    <div class="app">
+      <!-- Header -->
       <header class="header">
-        <div class="header-brand">
-          <img
-            id="brandLogo"
-            class="brand-logo"
-            src="logo_dark.png"
-            data-src-dark="logo_dark.png"
-            data-src-light="logo_light.png"
-            alt="Pixel Pulse logo"
-            role="button"
-            tabindex="0"
-            aria-label="Toggle theme"
-          />
-          <div class="header-copy">
-            <h1>Pixel Pulse</h1>
+        <div class="brand">
+          <div class="logo-icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+            </svg>
           </div>
+          <span class="brand-name">Pixel Pulse</span>
         </div>
+        <button id="themeToggle" class="icon-button" aria-label="Toggle Theme">
+          <svg class="sun-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2"/><path d="M12 21v2"/><path d="M4.22 4.22l1.42 1.42"/><path d="M18.36 18.36l1.42 1.42"/><path d="M1 12h2"/><path d="M21 12h2"/><path d="M4.22 19.78l1.42-1.42"/><path d="M18.36 5.64l1.42-1.42"/></svg>
+          <svg class="moon-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
       </header>
 
-      <p id="statusText" class="status" aria-live="polite">Loading status…</p>
-      <section class="rules-list" id="rulesContainer"></section>
+      <!-- Main Control -->
+      <div class="control-module main-toggle-module">
+        <div class="module-info">
+          <span class="module-label">Global Status</span>
+          <span id="statusText" class="module-status">Active</span>
+        </div>
+        <label class="switch">
+          <input type="checkbox" id="globalToggle" checked />
+          <span class="slider"></span>
+        </label>
+      </div>
 
-      <section class="add-rule">
-        <h2>Add Rule</h2>
+      <!-- Rules List -->
+      <div class="section-title">Active Rules</div>
+      <div id="rulesContainer" class="rules-list">
+        <!-- Rules injected here -->
+      </div>
+
+      <!-- Add Rule -->
+      <div class="section-title">New Rule</div>
+      <div class="control-module form-module">
         <form id="addRuleForm">
-          <label class="form-field">
-            <span>Name</span>
-            <input type="text" id="addRuleName" placeholder="e.g. Payroll Portal" required />
-          </label>
-          <label class="form-field">
-            <span>URL Pattern</span>
-            <input
-              type="text"
-              id="addRulePattern"
-              placeholder="*://app.example.com/*"
-              required
-            />
-          </label>
-          <div class="form-row">
-            <label class="form-field">
-              <span>Interval (min)</span>
-              <input type="number" id="addRuleInterval" min="1" value="3" />
-            </label>
-            <label class="form-field">
-              <span>Activity</span>
-              <select id="addRuleActivity">
-                <option value="mousemove">Mouse Pulse</option>
-                <option value="scroll">Scroll Nudge</option>
-                <option value="ping">Network Ping</option>
-                <option value="refresh">Page Refresh (idle only)</option>
-              </select>
-            </label>
+          <div class="input-group">
+            <input type="text" id="addRuleName" placeholder="Rule Name" required />
+            <input type="text" id="addRulePattern" placeholder="URL Pattern (e.g. *://example.com/*)" required />
           </div>
-          <button type="submit" class="primary-button">Add Rule</button>
+          <div class="input-row">
+            <div class="input-wrapper">
+              <input type="number" id="addRuleInterval" min="1" value="5" placeholder="Min" />
+              <span class="unit">min</span>
+            </div>
+            <select id="addRuleActivity">
+              <option value="mousemove">Mouse Pulse</option>
+              <option value="scroll">Scroll Nudge</option>
+              <option value="ping">Network Ping</option>
+              <option value="refresh">Page Refresh</option>
+            </select>
+          </div>
+          <button type="submit" class="action-button">Add Rule</button>
         </form>
-      </section>
-
-      <footer class="footer">
-        <span>© 2025 <a href="https://karthiklal.in" target="_blank" rel="noopener noreferrer">KARTHIK LAL</a>. All rights reserved.</span>
-      </footer>
-    </main>
+      </div>
+    </div>
   </body>
 </html>
