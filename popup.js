@@ -81,7 +81,11 @@ function applyTheme() {
 
 function renderStatus() {
   const statusText = document.getElementById('statusText');
-  if (state.globalEnabled) {
+  const isEnabled = state.globalEnabled;
+
+  document.body.classList.toggle('global-disabled', !isEnabled);
+
+  if (isEnabled) {
     statusText.textContent = 'Active';
     statusText.style.color = 'var(--accent)';
   } else {
@@ -146,6 +150,8 @@ function renderRules() {
 }
 
 async function addRule() {
+  if (!state.globalEnabled) return;
+
   const nameInput = document.getElementById('addRuleName');
   const patternInput = document.getElementById('addRulePattern');
   const intervalInput = document.getElementById('addRuleInterval');
