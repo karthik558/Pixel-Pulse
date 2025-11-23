@@ -94,7 +94,7 @@ function renderStatus() {
   }
 }
 
-function renderRules() {
+async function renderRules() {
   const container = document.getElementById('rulesContainer');
   container.innerHTML = '';
 
@@ -103,10 +103,44 @@ function renderRules() {
     return;
   }
 
+  const localData = await chrome.storage.local.get(['lastRuleExecutions']);
+  const lastExecutions = localData.lastRuleExecutions || {};
+  const now = Date.now();
+
   state.rules.forEach(rule => {
     const card = document.createElement('div');
     card.className = 'rule-card';
     card.dataset.id = rule.id;
+
+    const lastRun = lastExecutions[rule.id];
+    let statusHtml = '';
+
+    if (lastRun) {
+      const intervalMs = (rule.intervalMinutes || 5) * 60000;
+      const nextRun = lastRun + intervalMs;
+      const isDue = now >= nextRun;
+
+      statusHtml = `
+        <div class="rule-status-info">
+          <div class="status-item">
+            <span class="status-label">Last:</span>
+            <span class="status-value">${formatTime(lastRun)}</span>
+          </div>
+          <div class="status-item">
+            <span class="status-label">Next:</span>
+            <span class="status-value ${isDue ? 'status-due' : ''}">${isDue ? 'Due now' : formatTime(nextRun)}</span>
+          </div>
+        </div>
+      `;
+    } else {
+      statusHtml = `
+        <div class="rule-status-info">
+          <div class="status-item">
+            <span class="status-value">Waiting for first run...</span>
+          </div>
+        </div>
+      `;
+    }
 
     card.innerHTML = `
       <div class="rule-header">
@@ -124,6 +158,7 @@ function renderRules() {
         </div>
       </div>
       <div class="rule-body">
+        ${statusHtml}
         <div class="input-row">
           <div class="input-wrapper">
             <input type="number" class="edit-interval" value="${rule.intervalMinutes}" min="1">
@@ -147,6 +182,10 @@ function renderRules() {
     `;
     container.appendChild(card);
   });
+}
+
+function formatTime(timestamp) {
+  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 }
 
 async function addRule() {
@@ -227,6 +266,11 @@ async function handleRuleChange(e) {
     rule.intervalMinutes = parseInt(e.target.value) || 1;
   } else if (e.target.classList.contains('edit-activity')) {
     rule.activity = e.target.value;
+    // Update icon immediately
+    const iconContainer = card.querySelector('.rule-icon');
+    if (iconContainer) {
+      iconContainer.innerHTML = getIcon(rule.activity);
+    }
   }
 
   await chrome.storage.sync.set({ [STORAGE_KEYS.RULES]: state.rules });

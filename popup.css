@@ -271,6 +271,37 @@ input:checked + .slider:before {
   display: flex;
 }
 
+.rule-status-info {
+  display: flex;
+  justify-content: space-between;
+  background: rgba(120, 120, 128, 0.05);
+  padding: 8px 12px;
+  border-radius: 8px;
+  margin-bottom: 4px;
+}
+
+.status-item {
+  display: flex;
+  gap: 6px;
+  font-size: 12px;
+  align-items: center;
+}
+
+.status-label {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.status-value {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.status-due {
+  color: var(--accent);
+}
+
 .rule-actions {
   display: flex;
   justify-content: space-between;
